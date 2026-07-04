@@ -2,122 +2,225 @@
 
 import { useMemo, useState } from "react";
 import { Position, Situation } from "@/data/types";
-import { situationsParPosition } from "@/data/situations";
+import { tirerSession, compteParNiveau } from "@/data/session";
 
 interface QuizProps {
   position: Position;
   onRetour: () => void;
 }
 
+type Ecran = "config" | "jeu" | "fin";
+type NiveauFiltre = 1 | 2 | 3 | "tous";
+
 const NIVEAU_LABEL: Record<number, string> = {
   1: "Base",
   2: "Intermédiaire",
   3: "Avancé",
 };
-
 const NIVEAU_COULEUR: Record<number, string> = {
-  1: "bg-green-100 text-green-800",
+  1: "bg-emerald-100 text-emerald-800",
   2: "bg-amber-100 text-amber-800",
-  3: "bg-red-100 text-red-800",
+  3: "bg-rose-100 text-rose-800",
 };
 
 export default function Quiz({ position, onRetour }: QuizProps) {
-  const situations = useMemo(
-    () => situationsParPosition(position.id),
-    [position.id]
-  );
+  const compte = useMemo(() => compteParNiveau(position.id), [position.id]);
+
+  const [ecran, setEcran] = useState<Ecran>("config");
+  const [niveau, setNiveau] = useState<NiveauFiltre>("tous");
+  const [taille, setTaille] = useState(10);
+  const [session, setSession] = useState<Situation[]>([]);
 
   const [index, setIndex] = useState(0);
   const [choixId, setChoixId] = useState<string | null>(null);
   const [score, setScore] = useState(0);
-  const [reussies, setReussies] = useState<Set<string>>(new Set());
-  const [termine, setTermine] = useState(false);
+  const [historique, setHistorique] = useState<boolean[]>([]);
 
-  const situation: Situation | undefined = situations[index];
-
-  if (!situation) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-slate-600">
-          Aucune situation pour cette position pour l&apos;instant.
-        </p>
-        <button
-          onClick={onRetour}
-          className="mt-4 px-5 py-2 rounded-lg bg-slate-800 text-white font-semibold"
-        >
-          ← Retour
-        </button>
-      </div>
-    );
+  function demarrer() {
+    const s = tirerSession(position.id, taille, niveau);
+    setSession(s);
+    setIndex(0);
+    setChoixId(null);
+    setScore(0);
+    setHistorique([]);
+    setEcran("jeu");
   }
 
-  const choixChoisi = situation.choix.find((c) => c.id === choixId);
+  const situation = session[index];
+  const choixChoisi = situation?.choix.find((c) => c.id === choixId);
   const aRepondu = choixId !== null;
-  const estDernier = index === situations.length - 1;
+  const estDernier = index === session.length - 1;
 
   function repondre(id: string) {
-    if (aRepondu) return; // verrouille après la réponse
+    if (aRepondu) return;
     setChoixId(id);
-    const c = situation!.choix.find((x) => x.id === id);
-    if (c?.correct && !reussies.has(situation!.id)) {
-      setScore((s) => s + 1);
-      setReussies((r) => new Set(r).add(situation!.id));
-    }
+    const c = situation.choix.find((x) => x.id === id);
+    const bon = !!c?.correct;
+    if (bon) setScore((s) => s + 1);
+    setHistorique((h) => [...h, bon]);
   }
 
   function suivant() {
     if (estDernier) {
-      setTermine(true);
+      setEcran("fin");
       return;
     }
     setIndex((i) => i + 1);
     setChoixId(null);
   }
 
-  function recommencer() {
-    setIndex(0);
-    setChoixId(null);
-    setScore(0);
-    setReussies(new Set());
-    setTermine(false);
+  // ─────────────── ÉCRAN CONFIG ───────────────
+  if (ecran === "config") {
+    const dispo =
+      niveau === "tous"
+        ? compte.total
+        : niveau === 1
+        ? compte.n1
+        : niveau === 2
+        ? compte.n2
+        : compte.n3;
+    return (
+      <div className="max-w-md mx-auto px-4 py-8">
+        <button
+          onClick={onRetour}
+          className="text-slate-500 hover:text-slate-800 font-medium text-sm mb-6"
+        >
+          ← Toutes les positions
+        </button>
+
+        <div className="text-center mb-8">
+          <div
+            className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-white text-2xl font-black mb-3 shadow-lg"
+            style={{ backgroundColor: position.couleur }}
+          >
+            {position.numero}
+          </div>
+          <h2 className="text-2xl font-black text-slate-800">{position.nom}</h2>
+          <p className="text-sm text-slate-500 mt-1 leading-snug">
+            {position.role}
+          </p>
+        </div>
+
+        {/* Niveau */}
+        <label className="block text-sm font-bold text-slate-700 mb-2">
+          Niveau de difficulté
+        </label>
+        <div className="grid grid-cols-2 gap-2 mb-6">
+          {(
+            [
+              ["tous", `Tous (${compte.total})`],
+              [1, `Base (${compte.n1})`],
+              [2, `Intermédiaire (${compte.n2})`],
+              [3, `Avancé (${compte.n3})`],
+            ] as [NiveauFiltre, string][]
+          ).map(([val, label]) => (
+            <button
+              key={String(val)}
+              onClick={() => setNiveau(val)}
+              className={`px-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition ${
+                niveau === val
+                  ? "border-transparent text-white shadow"
+                  : "border-slate-200 text-slate-600 hover:border-slate-300"
+              }`}
+              style={
+                niveau === val
+                  ? { backgroundColor: position.couleur }
+                  : undefined
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Longueur */}
+        <label className="block text-sm font-bold text-slate-700 mb-2">
+          Longueur de la session
+        </label>
+        <div className="grid grid-cols-3 gap-2 mb-8">
+          {[5, 10, 20].map((n) => (
+            <button
+              key={n}
+              onClick={() => setTaille(n)}
+              className={`px-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition ${
+                taille === n
+                  ? "border-transparent text-white shadow"
+                  : "border-slate-200 text-slate-600 hover:border-slate-300"
+              }`}
+              style={
+                taille === n ? { backgroundColor: position.couleur } : undefined
+              }
+            >
+              {n} questions
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={demarrer}
+          disabled={dispo === 0}
+          className="w-full py-3.5 rounded-2xl text-white font-black text-lg shadow-lg hover:opacity-90 transition disabled:opacity-40"
+          style={{ backgroundColor: position.couleur }}
+        >
+          🥎 Commencer l&apos;entraînement
+        </button>
+        <p className="text-center text-xs text-slate-400 mt-3">
+          {Math.min(taille, dispo)} situations tirées au hasard parmi {dispo}
+        </p>
+      </div>
+    );
   }
 
-  // ─── Écran de fin ───
-  if (termine) {
-    const pct = Math.round((score / situations.length) * 100);
+  // ─────────────── ÉCRAN FIN ───────────────
+  if (ecran === "fin") {
+    const pct = Math.round((score / session.length) * 100);
     const message =
       pct === 100
         ? "Parfait ! Un vrai cerveau de softball ! 🧠🥎"
         : pct >= 70
         ? "Très bien joué ! Ton IQ softball grimpe ! 💪"
         : pct >= 40
-        ? "Bon début ! Relis les principes et réessaie. 📈"
+        ? "Bon travail ! Relis les principes et réessaie. 📈"
         : "Continue à t'entraîner, chaque erreur t'apprend ! 🔁";
     return (
-      <div className="text-center py-10 px-4">
+      <div className="max-w-md mx-auto text-center py-10 px-4">
         <div
-          className="w-28 h-28 mx-auto rounded-full flex items-center justify-center text-white text-3xl font-black mb-4"
+          className="w-28 h-28 mx-auto rounded-full flex items-center justify-center text-white text-3xl font-black mb-4 shadow-xl"
           style={{ backgroundColor: position.couleur }}
         >
           {pct}%
         </div>
-        <h2 className="text-2xl font-black text-slate-800">
-          {position.nom}
-        </h2>
+        <h2 className="text-2xl font-black text-slate-800">{position.nom}</h2>
         <p className="text-slate-600 mt-1">
-          {score} / {situations.length} bonnes décisions
+          {score} / {session.length} bonnes décisions
         </p>
-        <p className="text-lg font-semibold text-slate-800 mt-4">{message}</p>
-        <div className="flex gap-3 justify-center mt-8">
+
+        {/* Ruban de résultats */}
+        <div className="flex flex-wrap gap-1.5 justify-center my-5">
+          {historique.map((bon, i) => (
+            <span
+              key={i}
+              className={`w-6 h-6 rounded-md flex items-center justify-center text-xs ${
+                bon ? "bg-emerald-500 text-white" : "bg-rose-400 text-white"
+              }`}
+            >
+              {bon ? "✓" : "✗"}
+            </span>
+          ))}
+        </div>
+
+        <p className="text-lg font-semibold text-slate-800 mb-8">{message}</p>
+        <div className="flex flex-col gap-3">
           <button
-            onClick={recommencer}
-            className="px-5 py-2.5 rounded-lg bg-slate-800 text-white font-semibold hover:bg-slate-700 transition"
+            onClick={() => setEcran("config")}
+            className="w-full py-3 rounded-2xl text-white font-bold hover:opacity-90 transition"
+            style={{ backgroundColor: position.couleur }}
           >
-            🔁 Recommencer
+            🔁 Nouvelle session
           </button>
           <button
             onClick={onRetour}
-            className="px-5 py-2.5 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-100 transition"
+            className="w-full py-3 rounded-2xl border-2 border-slate-200 text-slate-700 font-bold hover:bg-slate-50 transition"
           >
             Changer de position
           </button>
@@ -126,32 +229,31 @@ export default function Quiz({ position, onRetour }: QuizProps) {
     );
   }
 
-  // ─── Écran de situation ───
+  // ─────────────── ÉCRAN JEU ───────────────
+  if (!situation) return null;
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
-      {/* En-tête */}
       <div className="flex items-center justify-between mb-4">
         <button
           onClick={onRetour}
           className="text-slate-500 hover:text-slate-800 font-medium text-sm"
         >
-          ← Positions
+          ← Quitter
         </button>
-        <div className="flex items-center gap-2">
-          <span
-            className="px-3 py-1 rounded-full text-white text-sm font-bold"
-            style={{ backgroundColor: position.couleur }}
-          >
-            {position.nom}
-          </span>
-        </div>
+        <span
+          className="px-3 py-1 rounded-full text-white text-sm font-bold"
+          style={{ backgroundColor: position.couleur }}
+        >
+          {position.nom}
+        </span>
       </div>
 
       {/* Progression */}
       <div className="mb-5">
         <div className="flex justify-between text-xs text-slate-500 mb-1">
           <span>
-            Situation {index + 1} / {situations.length}
+            Situation {index + 1} / {session.length}
           </span>
           <span>Score : {score}</span>
         </div>
@@ -159,17 +261,16 @@ export default function Quiz({ position, onRetour }: QuizProps) {
           <div
             className="h-full rounded-full transition-all"
             style={{
-              width: `${((index + 1) / situations.length) * 100}%`,
+              width: `${((index + 1) / session.length) * 100}%`,
               backgroundColor: position.couleur,
             }}
           />
         </div>
       </div>
 
-      {/* Carte situation */}
       <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
-        {/* Contexte du jeu */}
-        <div className="bg-slate-800 text-white px-5 py-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        {/* Contexte */}
+        <div className="bg-slate-800 text-white px-5 py-3 flex flex-wrap gap-x-4 gap-y-1 text-sm items-center">
           <span>
             <span className="text-slate-400">Retraits :</span>{" "}
             <b>{situation.retraits}</b>
@@ -194,6 +295,11 @@ export default function Quiz({ position, onRetour }: QuizProps) {
         </div>
 
         <div className="p-5">
+          {situation.pointage && (
+            <p className="text-xs font-semibold text-slate-400 mb-1">
+              {situation.pointage}
+            </p>
+          )}
           <h3 className="text-lg font-black text-slate-800 mb-2">
             {situation.titre}
           </h3>
@@ -201,28 +307,21 @@ export default function Quiz({ position, onRetour }: QuizProps) {
             {situation.description}
           </p>
 
-          {/* Choix */}
           <div className="space-y-3">
             {situation.choix.map((c) => {
               let style =
                 "border-slate-200 hover:border-slate-400 hover:bg-slate-50";
               if (aRepondu) {
-                if (c.correct) {
-                  style = "border-green-500 bg-green-50";
-                } else if (c.id === choixId) {
-                  style = "border-red-400 bg-red-50";
-                } else {
-                  style = "border-slate-200 opacity-60";
-                }
+                if (c.correct) style = "border-emerald-500 bg-emerald-50";
+                else if (c.id === choixId) style = "border-rose-400 bg-rose-50";
+                else style = "border-slate-200 opacity-60";
               }
               return (
                 <button
                   key={c.id}
                   onClick={() => repondre(c.id)}
                   disabled={aRepondu}
-                  className={`w-full text-left px-4 py-3 rounded-xl border-2 font-medium text-slate-700 transition ${style} ${
-                    !aRepondu ? "cursor-pointer" : "cursor-default"
-                  }`}
+                  className={`w-full text-left px-4 py-3 rounded-xl border-2 font-medium text-slate-700 transition ${style}`}
                 >
                   <span className="flex items-start gap-2">
                     {aRepondu && c.correct && <span>✅</span>}
@@ -236,12 +335,11 @@ export default function Quiz({ position, onRetour }: QuizProps) {
             })}
           </div>
 
-          {/* Feedback */}
           {aRepondu && choixChoisi && (
             <div
               className={`mt-5 rounded-xl p-4 ${
                 choixChoisi.correct
-                  ? "bg-green-50 border border-green-200"
+                  ? "bg-emerald-50 border border-emerald-200"
                   : "bg-amber-50 border border-amber-200"
               }`}
             >
@@ -259,7 +357,6 @@ export default function Quiz({ position, onRetour }: QuizProps) {
             </div>
           )}
 
-          {/* Bouton suivant */}
           {aRepondu && (
             <button
               onClick={suivant}
